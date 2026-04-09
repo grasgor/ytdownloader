@@ -1,14 +1,102 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import threading
+import subprocess
+import shutil
 import os
 import sys
 
 try:
     import yt_dlp
 except ImportError:
-    messagebox.showerror("Missing dependency", "Please install yt-dlp:\n  pip install yt-dlp")
+    messagebox.showerror("Missing dependency", "yt-dlp not found. Please reinstall the app.")
     sys.exit(1)
+
+
+WINGET_PACKAGES = [
+    ("ffmpeg",  "Gyan.FFmpeg"),
+    ("yt-dlp",  "yt-dlp.yt-dlp"),
+]
+
+
+def _missing_tools():
+    missing = []
+    if not shutil.which("ffmpeg"):
+        missing.append("Gyan.FFmpeg")
+    if not shutil.which("yt-dlp"):
+        missing.append("yt-dlp.yt-dlp")
+    return missing
+
+
+def _install_via_winget(pkg_ids, status_cb):
+    for pkg in pkg_ids:
+        status_cb(f"Installing {pkg}…")
+        result = subprocess.run(
+            ["winget", "install", "--id", pkg, "-e", "--silent",
+             "--accept-source-agreements", "--accept-package-agreements"],
+            capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"winget failed for {pkg}:\n{result.stderr.strip()}")
+
+
+def ensure_dependencies(root, on_ready):
+    """Check for ffmpeg/yt-dlp; install via winget if missing, then call on_ready."""
+    missing = _missing_tools()
+    if not missing:
+        on_ready()
+        return
+
+    names = " and ".join(p.split(".")[0] for p in missing)
+    ok = messagebox.askyesno(
+        "One-time setup",
+        f"{names} need to be installed for the app to work.\n\n"
+        "Click Yes to install automatically (requires internet).\n"
+        "This only happens once.",
+    )
+    if not ok:
+        root.destroy()
+        return
+
+    # Show install overlay
+    overlay = tk.Toplevel(root)
+    overlay.title("Installing…")
+    overlay.resizable(False, False)
+    overlay.grab_set()
+    overlay.configure(bg="#1e1e2e")
+    overlay.geometry("340x110")
+    overlay.update_idletasks()
+    x = root.winfo_x() + (root.winfo_width()  - 340) // 2
+    y = root.winfo_y() + (root.winfo_height() - 110) // 2
+    overlay.geometry(f"+{x}+{y}")
+
+    lbl = tk.Label(overlay, text="Starting…", font=("Segoe UI", 10),
+                   bg="#1e1e2e", fg="#e2e8f0")
+    lbl.pack(pady=(20, 8))
+    bar = ttk.Progressbar(overlay, mode="indeterminate", length=280)
+    bar.pack()
+    bar.start(12)
+
+    def status_cb(msg):
+        root.after(0, lbl.config, {"text": msg})
+
+    def worker():
+        try:
+            _install_via_winget(missing, status_cb)
+            root.after(0, _install_done, overlay, on_ready, None)
+        except Exception as e:
+            root.after(0, _install_done, overlay, on_ready, str(e))
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def _install_done(overlay, on_ready, error):
+    overlay.destroy()
+    if error:
+        messagebox.showerror("Install failed", error)
+    else:
+        messagebox.showinfo("Ready!", "Setup complete. You're good to go!")
+        on_ready()
 
 
 RESOLUTIONS = [
@@ -201,4 +289,17 @@ class App(tk.Tk):
 
 
 if __name__ == "__main__":
-    App().mainloop()
+    root = tk.Tk()
+    root.withdraw()  # hide until deps confirmed
+
+    def launch():
+        root.deiconify()
+        App().mainloop()
+
+    # Reuse the hidden root just to anchor dialogs, then replace with App
+    # Actually simpler: build App hidden, check deps, then show
+    root.destroy()
+
+    _check_root = tk.Tk()
+    _check_root.withdraw()
+    ensure_dependencies(_check_root, lambda: [_check_root.destroy(), App().mainloop()])
