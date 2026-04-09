@@ -1,0 +1,27 @@
+========================================
+  VIDEO DOWNLOADER - How to Use
+========================================
+
+1. Open the app by double-clicking VideoDownloader.exe
+
+2. Copy the link to any video (YouTube, etc.)
+   and click the [Paste] button — or paste it yourself.
+
+3. Pick the quality you want from the dropdown:
+     - Best available  → highest quality
+     - 1080p / 720p / 480p / 360p → specific size
+     - Audio only (mp3) → saves just the music/audio
+
+4. Choose where to save it (defaults to your Downloads folder).
+
+5. Click [Download] and wait for the green bar to finish.
+
+That's it! The file will be in the folder you chose.
+
+========================================
+  NOTES
+========================================
+- First download may take a moment to start (normal).
+- Make sure you're connected to the internet.
+- Some videos may be age-restricted or region-locked
+  and cannot be downloaded.
