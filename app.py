@@ -102,12 +102,12 @@ def _install_done(overlay, on_ready, error):
 
 
 RESOLUTIONS = [
-    ("Best available",       "bestvideo+bestaudio/best"),
-    ("1080p",                "bestvideo[height<=1080]+bestaudio/best"),
-    ("720p",                 "bestvideo[height<=720]+bestaudio/best"),
-    ("480p",                 "bestvideo[height<=480]+bestaudio/best"),
-    ("360p",                 "bestvideo[height<=360]+bestaudio/best"),
-    ("Audio only (mp3)",     "bestaudio/best"),
+    ("Best available",   "bestvideo+bestaudio[ext=m4a]/bestvideo+bestaudio/best"),
+    ("1080p",            "bestvideo[height<=1080]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best"),
+    ("720p",             "bestvideo[height<=720]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best"),
+    ("480p",             "bestvideo[height<=480]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best"),
+    ("360p",             "bestvideo[height<=360]+bestaudio[ext=m4a]/bestvideo[height<=360]+bestaudio/best"),
+    ("Audio only (mp3)", "bestaudio/best"),
 ]
 
 AUDIO_ONLY_LABEL = "Audio only (mp3)"
@@ -234,25 +234,50 @@ class App(tk.Tk):
             messagebox.showwarning("Bad folder", "The save folder does not exist.")
             return
         self.btn.config(state="disabled")
-        self.progress["value"] = 0
-        self.status_var.set("Starting…")
+        self.progress.config(mode="indeterminate")
+        self.progress.start(10)
+        self.status_var.set("Fetching video info…")
         threading.Thread(target=self._download, args=(url, folder), daemon=True).start()
 
     def _download(self, url, folder):
         fmt_str, fmt_label = self._fmt_label_to_format(self.res_var.get())
         is_audio = fmt_label == AUDIO_ONLY_LABEL
 
+        # Pre-fetch info to get combined size of all streams
+        self.after(0, self._update_progress, 0, "Fetching video info…")
+        total_size = 0
+        try:
+            with yt_dlp.YoutubeDL({"format": fmt_str, "quiet": True, "no_warnings": True}) as ydl:
+                info = ydl.extract_info(url, download=False)
+                streams = info.get("requested_formats") or [info]
+                total_size = sum(
+                    f.get("filesize") or f.get("filesize_approx") or 0
+                    for f in streams
+                )
+        except Exception:
+            pass  # proceed without size; bar will just show indeterminate
+
+        phase_done = [0]    # bytes fully downloaded in previous streams
+        stream_prev = [0]   # last downloaded_bytes value for current stream
+
         def hook(d):
             if d["status"] == "downloading":
-                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
                 done  = d.get("downloaded_bytes", 0)
-                pct   = (done / total * 100) if total else 0
+                stream_prev[0] = done
                 speed = d.get("_speed_str", "")
                 eta   = d.get("_eta_str", "")
-                self.after(0, self._update_progress, pct,
-                           f"Downloading… {speed}  ETA {eta}")
+                if total_size:
+                    pct = min((phase_done[0] + done) / total_size * 100, 99)
+                    self.after(0, self._update_progress, pct,
+                               f"Downloading… {speed}  ETA {eta}")
+                else:
+                    self.after(0, self.status_var.set,
+                               f"Downloading… {speed}  ETA {eta}")
             elif d["status"] == "finished":
-                self.after(0, self._update_progress, 99, "Processing…")
+                phase_done[0] += stream_prev[0]
+                stream_prev[0] = 0
+                pct = min(phase_done[0] / total_size * 100, 99) if total_size else 99
+                self.after(0, self._update_progress, pct, "Merging…")
 
         opts = {
             "format": fmt_str,
@@ -261,6 +286,8 @@ class App(tk.Tk):
             "progress_hooks": [hook],
             "quiet": True,
             "no_warnings": True,
+            # re-encode audio to AAC if it isn't already (handles opus fallback)
+            "postprocessor_args": {"ffmpeg": ["-c:a", "aac", "-c:v", "copy"]},
         }
         if is_audio:
             opts["postprocessors"] = [{
@@ -277,10 +304,15 @@ class App(tk.Tk):
             self.after(0, self._done, False, str(e))
 
     def _update_progress(self, pct, msg):
+        if self.progress["mode"] == "indeterminate":
+            self.progress.stop()
+            self.progress.config(mode="determinate")
         self.progress["value"] = pct
         self.status_var.set(msg)
 
     def _done(self, ok, msg):
+        self.progress.stop()
+        self.progress.config(mode="determinate")
         self.progress["value"] = 100 if ok else 0
         self.status_var.set(msg)
         self.btn.config(state="normal")
