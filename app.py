@@ -58,22 +58,24 @@ def ensure_dependencies(root, on_ready):
         root.destroy()
         return
 
-    # Show install overlay
+    # Show install overlay centered on screen
     overlay = tk.Toplevel(root)
-    overlay.title("Installing…")
+    overlay.title("Video Downloader — Setup")
     overlay.resizable(False, False)
     overlay.grab_set()
     overlay.configure(bg="#1e1e2e")
-    overlay.geometry("340x110")
+    W, H = 420, 160
     overlay.update_idletasks()
-    x = root.winfo_x() + (root.winfo_width()  - 340) // 2
-    y = root.winfo_y() + (root.winfo_height() - 110) // 2
-    overlay.geometry(f"+{x}+{y}")
+    sw = overlay.winfo_screenwidth()
+    sh = overlay.winfo_screenheight()
+    overlay.geometry(f"{W}x{H}+{(sw-W)//2}+{(sh-H)//2}")
 
-    lbl = tk.Label(overlay, text="Starting…", font=("Segoe UI", 10),
-                   bg="#1e1e2e", fg="#e2e8f0")
-    lbl.pack(pady=(20, 8))
-    bar = ttk.Progressbar(overlay, mode="indeterminate", length=280)
+    tk.Label(overlay, text="Setting up Video Downloader",
+             font=("Segoe UI", 12, "bold"), bg="#1e1e2e", fg="#e2e8f0").pack(pady=(22, 4))
+    lbl = tk.Label(overlay, text="Starting…", font=("Segoe UI", 9),
+                   bg="#1e1e2e", fg="#94a3b8")
+    lbl.pack(pady=(0, 10))
+    bar = ttk.Progressbar(overlay, mode="indeterminate", length=340)
     bar.pack()
     bar.start(12)
 
@@ -289,17 +291,12 @@ class App(tk.Tk):
 
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    root.withdraw()  # hide until deps confirmed
-
-    def launch():
-        root.deiconify()
-        App().mainloop()
-
-    # Reuse the hidden root just to anchor dialogs, then replace with App
-    # Actually simpler: build App hidden, check deps, then show
-    root.destroy()
-
     _check_root = tk.Tk()
     _check_root.withdraw()
-    ensure_dependencies(_check_root, lambda: [_check_root.destroy(), App().mainloop()])
+
+    def _launch():
+        _check_root.destroy()
+        App().mainloop()
+
+    ensure_dependencies(_check_root, _launch)
+    _check_root.mainloop()  # keeps event loop alive while winget runs
